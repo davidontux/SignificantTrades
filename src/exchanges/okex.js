@@ -24,7 +24,7 @@ class Okex extends Exchange {
     // retro compatibility for client without contract specification stored
     // -> force refresh of stored instruments / specs
     if (this.products && typeof this.specs === 'undefined') {
-      delete this.products;
+      delete this.products
     }
 
     this.matchPairName = pair => {
@@ -41,11 +41,11 @@ class Okex extends Exchange {
 
       if (id) {
         if (/\d+$/.test(id)) {
-          this.types[id] = 'futures';
-        } else if (/\-SWAP$/.test(id)) {
-          this.types[id] = 'swap';
+          this.types[id] = 'futures'
+        } else if (/-SWAP$/.test(id)) {
+          this.types[id] = 'swap'
         } else {
-          this.types[id] = 'spot';
+          this.types[id] = 'spot'
         }
       }
 
@@ -54,84 +54,55 @@ class Okex extends Exchange {
 
     this.options = Object.assign(
       {
-        url: 'wss://real.okex.com:10442/ws/v3'
+        url: 'wss://real.okex.com:8443/ws/v3'
       },
       this.options
     )
-  }
 
-  dispatchTrades() {
-    // check if a timeout is in progress
-    if (this.dispatchTradesTimeout) {
-      clearTimeout(this.dispatchTradesTimeout)
-    }
-
-    this.dispatchTradesTimeout = null
-
-    // if theres trades in the stack, dispatch them to emitter.
-    if (this.tradeStack.length > 0) {
-      this.emitTrades(this.tradeStack)
-
-      // clear stack
-      this.tradeStack.splice(0, this.tradeStack.length)
-    }
+    this.initialize()
   }
 
   connect() {
-    if (!super.connect()) return
+    const validation = super.connect()
+    if (!validation) return Promise.reject()
+    else if (validation instanceof Promise) return validation
 
-    this.api = new WebSocket(this.getUrl())
+    return new Promise((resolve, reject) => {
+      this.api = new WebSocket(this.getUrl())
 
-    this.api.binaryType = 'arraybuffer'
+      this.api.binaryType = 'arraybuffer'
 
-    this.api.onmessage = event => {
-      const trades = this.formatLiveTrades(event.data)
+      this.api.onmessage = event => this.queueTrades(this.formatLiveTrades(event.data))
 
-      if (!trades) {
-        return
-      } else if (trades.length > 1) {
-        // if a group of trades is received (likely in the spot) our job is already done so push them directly.
-        // dispatch any old trades
-        this.dispatchTrades()
+      this.api.onopen = e => {
+        this.api.send(
+          JSON.stringify({
+            op: 'subscribe',
+            args: this.pairs.map(pair => `${this.types[pair]}/trade:${pair}`)
+          })
+        )
 
-        // immediately dispatch new trades
-        this.emitTrades(trades)
+        this.keepalive = setInterval(() => {
+          this.api.send('ping')
+        }, 30000)
 
-        return
-      } else if (this.tradeStack.length && this.tradeStack[0][1] !== trades[0][1]) {
-        // dispatch the last stack (expired)
-        this.dispatchTrades()
+        this.emitOpen(e)
+
+        resolve()
       }
 
-        // push the last trade
-      this.tradeStack.push(trades[0])
+      this.api.onclose = event => {
+        this.emitClose(event)
 
-      clearTimeout(this.dispatchTradesTimeout);
-      this.dispatchTradesTimeout = setTimeout(this.dispatchTrades.bind(this), 30)
-    }
+        clearInterval(this.keepalive)
+      }
 
-    this.api.onopen = event => {
-      this.api.send(
-        JSON.stringify({
-          op: 'subscribe',
-          args: this.pairs.map(pair => `${this.types[pair]}/trade:${pair}`),
-        })
-      )
+      this.api.onerror = () => {
+        this.emitError({ message: `${this.id} disconnected` })
 
-      this.keepalive = setInterval(() => {
-        this.api.send('ping')
-      }, 30000)
-
-      this.emitOpen(event)
-    }
-
-    this.api.onclose = event => {
-      this.emitClose(event)
-
-      clearInterval(this.keepalive)
-    }
-
-    this.api.onerror = this.emitError.bind(this, { message: 'Websocket error' })
+        reject()
+      }
+    })
   }
 
   disconnect() {
@@ -170,7 +141,13 @@ class Okex extends Exchange {
         size = trade.size
       }
 
-      return [this.id, +new Date(trade.timestamp), +trade.price, size, trade.side === 'buy' ? 1 : 0]
+      return {
+        exchange: this.id,
+        timestamp: +new Date(trade.timestamp),
+        price: +trade.price,
+        size: +size,
+        side: trade.side
+      }
     })
   }
 
