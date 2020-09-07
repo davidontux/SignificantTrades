@@ -13,8 +13,8 @@ class Okex extends Exchange {
 
     this.endpoints = {
       PRODUCTS: [
-        'https://www.okex.com/api/spot/v3/instruments'`
-        'https://www.okex.com/api/swap/v3/instruments'`
+        'https://www.okex.com/api/spot/v3/instruments',
+        'https://www.okex.com/api/swap/v3/instruments',
         'https://www.okex.com/api/futures/v3/instruments'
       ],
       TRADES: () => `https://www.okex.com/api/v1/trades.do?symbol=${this.pair}`
@@ -41,14 +41,14 @@ class Okex extends Exchange {
 
       if (id) {
         if (/\d+$/.test(id)) {
-          this.types[id] = 'futures';
-        } else if (/\-SWAP$/.test(id)) {
-          this.types[id] = 'swap';
+          this.types[id] = 'futures'
+        } else if (/-SWAP$/.test(id)) {
+          this.types[id] = 'swap'
         } else {
-          this.types[id] = 'spot';
+          this.types[id] = 'spot'
         }
       }
-
+      
       return id || false
     }
 
